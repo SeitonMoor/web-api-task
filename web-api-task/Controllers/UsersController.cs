@@ -1,9 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using web_api_task.Database;
 using web_api_task.Models;
-using web_api_task.Repositories;
+using web_api_task.Services;
 
 namespace web_api_task.Controllers
 {
@@ -12,108 +10,74 @@ namespace web_api_task.Controllers
     [Authorize]
     public class UserController : ControllerBase
     {
-        private readonly IUserRepository _userRepository;
-        private readonly IUserGroupRepository _userGroupRepository;
-        private readonly IUserStateRepository _userStateRepository;
+        private readonly IUserService _userService;
 
-        public UserController(IUserRepository userRepository, IUserGroupRepository userGroupRepository, IUserStateRepository userStateRepository)
+        public UserController(IUserService userService)
         {
-            _userRepository = userRepository;
-            _userGroupRepository = userGroupRepository;
-            _userStateRepository = userStateRepository;
+            _userService = userService;
+        }
+
+        [HttpGet("{id:int}")]
+        public async Task<ActionResult<User>> GetUserAsync(int id)
+        {
+            try
+            {
+                var user = await _userService.GetUserAsync(id);
+                return Ok(user);
+            }
+            catch (Exception ex)
+            {
+                return NotFound(ex.Message);
+            }
         }
 
         [HttpGet]
-        [AllowAnonymous]
-        public async Task<ActionResult<IEnumerable<User>>> GetAll()
+        public async Task<ActionResult<IEnumerable<User>>> GetUsersAsync()
         {
-            return Ok(await _userRepository.GetAllAsync());
-        }
-
-        [HttpGet("{id}")]
-        public async Task<ActionResult<User>> Get(int id)
-        {
-            var user = await _userRepository.GetByIdAsync(id);
-            if (user == null)
-            {
-                return NotFound();
-            }
-
-            return Ok(user);
+            var users = await _userService.GetUsersAsync();
+            return Ok(users);
         }
 
         [HttpPost]
-        [AllowAnonymous]
-        public async Task<ActionResult<User>> Create([FromBody] User request)
+        public async Task<ActionResult<int>> CreateUserAsync([FromBody] User user)
         {
-            var existingUser = await _userRepository.GetByLoginAsync(request.Login);
-            if (existingUser != null)
+            try
             {
-                return BadRequest($"User with login {request.Login} already exists.");
+                var userId = await _userService.CreateUserAsync(user);
+                return Ok(userId);
             }
-
-            var adminUserGroup = await _userGroupRepository.GetByCodeAsync("Admin");
-            if (adminUserGroup == null)
+            catch (ArgumentException ex)
             {
-                return BadRequest("Admin user group not found.");
+                return BadRequest(ex.Message);
             }
-
-            var activeUserState = await _userStateRepository.GetByCodeAsync("Active");
-            if (activeUserState == null)
-            {
-                return BadRequest("Active user state not found.");
-            }
-
-            var user = new User
-            {
-                Login = request.Login,
-                Password = request.Password,
-                CreatedDate = DateTime.UtcNow,
-                UserGroupId = adminUserGroup.Id,
-                UserStateId = activeUserState.Id
-            };
-
-            await _userRepository.CreateUserAsync(user);
-
-            return CreatedAtAction(nameof(Get), new { id = user.Id }, user);
         }
 
-        [HttpPut("{id}")]
-        public async Task<ActionResult> Update(int id, [FromBody] User request)
+        [HttpPut("{id:int}")]
+        public async Task<ActionResult> UpdateUserAsync(int id, [FromBody] User user)
         {
-            var user = await _userRepository.GetByIdAsync(id);
-            if (user == null)
+            try
             {
-                return NotFound();
+                await _userService.UpdateUserAsync(id, user);
+                return Ok();
             }
-
-            user.Password = request.Password;
-
-            await _userRepository.UpdateUserAsync(user);
-
-            return NoContent();
+            catch (Exception ex)
+            {
+                return NotFound(ex.Message);
+            }
         }
 
-        [HttpDelete("{id}")]
-        public async Task<ActionResult> Delete(int id)
+        [HttpDelete("{id:int}")]
+        public async Task<ActionResult> DeleteUserAsync(int id)
         {
-            var user = await _userRepository.GetByIdAsync(id);
-            if (user == null)
+            try
             {
-                return NotFound();
+                await _userService.DeleteUserAsync(id);
+                return Ok();
             }
-
-            var blockedUserState = await _userStateRepository.GetByCodeAsync("Blocked");
-            if (blockedUserState == null)
+            catch (ArgumentException ex)
             {
-                return BadRequest("Blocked user state not found.");
+                return NotFound(ex.Message);
             }
-
-            user.UserStateId = blockedUserState.Id;
-
-            await _userRepository.UpdateUserAsync(user);
-
-            return NoContent();
         }
     }
 }
